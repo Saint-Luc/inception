@@ -1,0 +1,77 @@
+version: '3'
+
+# syntaxe de mort pour imposer a compose l'endroit sur le host ou on stocke le folder du container (folder mapping)
+volumes:
+  mariadb:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/home/lsanglas/data/mariadb'
+  wordpress:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/home/lsanglas/data/wordpress'
+
+# gros chad qui resolve les noms des containers en IP (pseudo dns) et qui SAIT a quel port mapper grace au EXPOSE dans le dockerfile de l'image tout ca sans utiliser aucun port de ton HOST
+networks:
+  inception:
+    name: inception
+
+services:
+  mariadb:
+    image: mariadb
+    build:
+      context: ./requirements/mariadb
+    container_name: mariadb
+    volumes:
+      - mariadb:/var/lib/mysql
+    networks:
+      - inception
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: mysqladmin ping --host=localhost -p${SQL_ROOT_PASSWORD}
+      interval: 5s
+      timeout: 1s
+      retries: 20
+      start_period: 5s
+
+  wordpress:
+    image: wordpress
+    build:
+      context: ./requirements/wordpress
+    container_name: wordpress
+    volumes:
+      - wordpress:/var/www/html/wordpress
+    networks:
+      - inception
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mariadb:
+        condition: service_healthy    
+
+  nginx:
+    image: nginx
+    build:
+      context: ./requirements/nginx
+    container_name: nginx
+    volumes:
+      - wordpress:/var/www/html/wordpress
+    depends_on:
+      - wordpress
+    ports:
+      - "443:443"
+    networks:
+      - inception
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: 'curl -kfsSL https://localhost:443/status'
+      interval: 5s
+      timeout: 1s
+      retries: 10
+      start_period: 5s
